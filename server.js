@@ -30,6 +30,7 @@ app.use(cors({
     if(isAllowed){
       callback(null, true);
     } else {
+      console.warn(`CORS blocked request from origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -42,14 +43,12 @@ app.post('/create-payment-intent', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: 200, // Amount in cents (2 euros)
       currency: 'eur',
-      metadata: { product: 'ebook' },
-      // Include a success URL in the metadata
       metadata: { 
-        product: 'ebook',
-        success_url: `${req.protocol}://${req.get('host')}/download-ebook`
+        product: 'ebook'
       }
     });
 
+    console.log(`Payment Intent created: ${paymentIntent.id}`);
     res.json({ 
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id
@@ -60,10 +59,34 @@ app.post('/create-payment-intent', async (req, res) => {
   }
 });
 
+app.post('/confirm-payment', async (req, res) => {
+  const { paymentIntentId } = req.body;
+
+  if (!paymentIntentId) {
+    return res.status(400).json({ error: 'Payment Intent ID is required' });
+  }
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status === 'succeeded') {
+      console.log(`Payment confirmed for: ${paymentIntentId}`);
+      res.json({ success: true, downloadUrl: `/download-ebook?payment_intent=${paymentIntentId}` });
+    } else {
+      console.warn(`Payment not successful for: ${paymentIntentId}`);
+      res.status(400).json({ error: 'Payment not successful' });
+    }
+  } catch (err) {
+    console.error('Error confirming payment:', err);
+    res.status(500).json({ error: 'An error occurred while confirming your payment.' });
+  }
+});
+
 app.get('/download-ebook', async (req, res) => {
   const paymentIntentId = req.query.payment_intent;
 
   if (!paymentIntentId) {
+    console.warn('Download attempt without Payment Intent ID');
     return res.status(400).send('Payment Intent ID is required');
   }
 
@@ -71,19 +94,23 @@ app.get('/download-ebook', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (paymentIntent.status !== 'succeeded') {
+      console.warn(`Download attempt for unsuccessful payment: ${paymentIntentId}`);
       return res.status(403).send('Payment not completed');
     }
 
     const filePath = path.join(__dirname, 'ebooks', 'um-presente.pdf');
     
     if (!fs.existsSync(filePath)) {
+      console.error(`eBook file not found: ${filePath}`);
       return res.status(404).send('eBook not found');
     }
 
-    res.download(filePath, 'your-ebook.pdf', (err) => {
+    res.download(filePath, 'Um-Presente.pdf', (err) => {
       if (err) {
         console.error('Error downloading file:', err);
         res.status(500).send('Error downloading file');
+      } else {
+        console.log(`eBook downloaded for payment: ${paymentIntentId}`);
       }
     });
   } catch (err) {
@@ -98,7 +125,7 @@ app.get('/', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Unhandled error:', err);
   res.status(500).send('Something broke!');
 });
 
