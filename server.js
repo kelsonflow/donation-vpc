@@ -40,15 +40,21 @@ app.use(cors({
 // Routes
 app.post('/create-payment-intent', async (req, res) => {
   try {
+    const { amount } = req.body;
+    
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 200, // Amount in cents (2 euros)
+      amount: Math.round(amount), // Stripe expects the amount in cents
       currency: 'eur',
       metadata: { 
         product: 'ebook'
       }
     });
 
-    console.log(`Payment Intent created: ${paymentIntent.id}`);
+    console.log(`Payment Intent created: ${paymentIntent.id} for amount: ${amount} cents`);
     res.json({ 
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id
