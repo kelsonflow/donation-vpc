@@ -40,21 +40,25 @@ app.use(cors({
 // Routes
 app.post('/create-payment-intent', async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, currency } = req.body;
     
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
+    if (!['eur', 'brl'].includes(currency.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid currency. Supported currencies are EUR and BRL.' });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount), // Stripe expects the amount in cents
-      currency: 'eur',
+      currency: currency.toLowerCase(),
       metadata: { 
         product: 'ebook'
       }
     });
 
-    console.log(`Payment Intent created: ${paymentIntent.id} for amount: ${amount} cents`);
+    console.log(`Payment Intent created: ${paymentIntent.id} for amount: ${amount} ${currency}`);
     res.json({ 
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id
